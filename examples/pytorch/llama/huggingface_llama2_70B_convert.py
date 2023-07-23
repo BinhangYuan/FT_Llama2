@@ -16,21 +16,21 @@ import argparse
 import configparser
 import numpy as np
 from pathlib import Path
-
+import torch
 import os
 from transformers import LlamaForCausalLM
 
 # using numpy extension: https://github.com/GreenWaves-Technologies/bfloat16
 # install the library with `pip install bfloat16`
-from bfloat16 import bfloat16
+# from bfloat16 import bfloat16
 
 def get_weight_data_type(data_type):
     if data_type == "fp32":
         return np.float32
     elif data_type == "fp16":
         return np.float16
-    elif data_type == "bf16":
-        return bfloat16
+    # elif data_type == "bf16":
+    #     return bfloat16
     else:
         assert False, f"Invalid weight data type {data_type}"
 
@@ -72,7 +72,7 @@ def split_and_convert(args):
 
     # load position_embedding from rank 0
     # model = torch.load(ckpt_name)
-    model = LlamaForCausalLM.from_pretrained(args.in_file)
+    model = LlamaForCausalLM.from_pretrained(args.hf_name, torch_dtype=torch.float16)
     hf_config = vars(model.config)
     print(f"hf_config: {hf_config}")
 
@@ -84,6 +84,8 @@ def split_and_convert(args):
     head_num = hf_config["num_attention_heads"]
     head_size = hidden_size // head_num
     num_layers = hf_config["num_hidden_layers"]
+    
+    n_rep = head_num // hf_config["num_key_value_heads"]
 
 
     np_weight_data_type = get_weight_data_type(args.weight_data_type)
@@ -127,10 +129,17 @@ def split_and_convert(args):
         # first merge QKV into a single weight
         # concat direct to FT shape: [hidden_size, 3, head_num, head_size]
         # copied from huggingface_gptj_ckpt_convert.py
+        
+        raw_k_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.k_proj.weight'])
+        raw_v_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.v_proj.weight'])
+        
+        rep_k_proj_weight = np.repeat(raw_k_proj_weight, n_rep, axis=0)
+        rep_v_proj_weight = np.repeat(raw_v_proj_weight, n_rep, axis=0)
+        
         qkv_weights = np.stack([
             param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.q_proj.weight']),
-            param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.k_proj.weight']),
-            param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.v_proj.weight']),
+            rep_k_proj_weight,
+            rep_v_proj_weight
         ])
         qkv_weights = np.transpose(qkv_weights, (2, 0, 1))
         qkv_weights_base_name = f'model.layers.{l}.attention.query_key_value.weight'
@@ -179,11 +188,11 @@ def split_and_convert(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-saved_dir', '-o', type=str, help='file name of output file', required=True)
-    parser.add_argument('-in_file', '-i', type=str, help='file name of input checkpoint file', required=True)
+    parser.add_argument('-hf_name', '-i', type=str, default='meta-llama/Llama-2-70b-hf', help='file name of input checkpoint file')
     parser.add_argument('-trained_gpu_num', '-t_g', type=int, help='How many gpus for inference', default=1)
     parser.add_argument('-infer_gpu_num', '-i_g', type=int, help='How many gpus for inference', required=True)
-    parser.add_argument("-weight_data_type", type=str, default="fp32", choices=["fp32", "fp16", "bf16"])
-    parser.add_argument('-model_name', '-m_n', type=str, help='model name', required=True)
+    parser.add_argument("-weight_data_type", type=str, default="fp16", choices=["fp32", "fp16", "bf16"])
+    parser.add_argument('-model_name', '-m_n', type=str, default="llama-2-70b", help='model name')
 
     args = parser.parse_args()
     print("\n=============== Argument ===============")

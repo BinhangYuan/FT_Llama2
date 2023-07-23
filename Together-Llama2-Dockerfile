@@ -1,0 +1,8 @@
+FROM nvcr.io/nvidia/pytorch:22.09-py3 AS builder
+WORKDIR /workspace/FasterTransformer
+ADD . /workspace/FasterTransformer
+RUN mkdir -p build && \
+    cd build && \
+    git submodule update --init --recursive && \
+    cmake -DSM=xx -DCMAKE_BUILD_TYPE=Release -DBUILD_PYT=ON -DBUILD_MULTI_GPU=ON .. && \
+    make -j 64

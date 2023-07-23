@@ -1,2 +1,2 @@
 torch==2.0.1
-transformers==4.32.0.dev0
+transformers@git+https://github.com/huggingface/transformers
