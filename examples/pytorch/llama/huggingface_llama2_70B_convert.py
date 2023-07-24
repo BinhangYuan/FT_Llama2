@@ -130,11 +130,23 @@ def split_and_convert(args):
         # concat direct to FT shape: [hidden_size, 3, head_num, head_size]
         # copied from huggingface_gptj_ckpt_convert.py
         
+        # A dirty fix of GQA, does not work yet.
+        # raw_k_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.k_proj.weight'])
+        # raw_v_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.v_proj.weight'])
+        # rep_k_proj_weight = np.repeat(raw_k_proj_weight, n_rep, axis=0)
+        # rep_v_proj_weight = np.repeat(raw_v_proj_weight, n_rep, axis=0)
+        
         raw_k_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.k_proj.weight'])
         raw_v_proj_weight = param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.v_proj.weight'])
         
-        rep_k_proj_weight = np.repeat(raw_k_proj_weight, n_rep, axis=0)
-        rep_v_proj_weight = np.repeat(raw_v_proj_weight, n_rep, axis=0)
+        split_k_proj_weight = np.reshape(raw_k_proj_weight, (-1, head_size, hidden_size))
+        split_v_proj_weight = np.reshape(raw_v_proj_weight, (-1, head_size, hidden_size))
+        
+        rep_k_proj_weight = np.repeat(split_k_proj_weight, n_rep, axis=0)
+        rep_v_proj_weight = np.repeat(split_v_proj_weight, n_rep, axis=0)
+        
+        rep_k_proj_weight = np.reshape(rep_k_proj_weight, (hidden_size, hidden_size))
+        rep_v_proj_weight = np.reshape(rep_v_proj_weight, (hidden_size, hidden_size))
         
         qkv_weights = np.stack([
             param_to_weights(model.state_dict()[f'model.layers.{l}.self_attn.q_proj.weight']),
