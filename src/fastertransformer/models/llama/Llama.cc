@@ -765,9 +765,9 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             {"pid", std::to_string(tensor_para_.rank_)},
             {"tid", "1. prepare"},
             {"ts", "0"},
-            {"dur", std::to_string(dur_ms)};
+            {"dur", std::to_string(dur_ms)},
             {"cname", "startup"}
-        }
+        };
         profiling_results_.push_back(init_record);
 #endif
 
@@ -786,9 +786,9 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             {"pid", std::to_string(tensor_para_.rank_)},
             {"tid", "2. gpt_context_decoder"},
             {"ts", std::to_string(ts_ms)},
-            {"dur", std::to_string(dur_ms)};
+            {"dur", std::to_string(dur_ms)},
             {"cname", "thread_state_iowait"}
-        }
+        };
         profiling_results_.push_back(gpt_context_decoder_record);
 #endif
 
@@ -964,14 +964,14 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                 cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
                 cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
                 std::unordered_map<std::string, std::string> gpt_decoder_record{
-                    {"name", "gpt_decoder_" + std::to_string(step) + std::to_string(ite)},
+                    {"name", "gpt_decoder_" + std::to_string(step) + '_' + std::to_string(ite)},
                     {"ph", "X"},
                     {"pid", std::to_string(tensor_para_.rank_)},
                     {"tid", "3. gpt_decoder"},
                     {"ts", std::to_string(ts_ms)},
-                    {"dur", std::to_string(dur_ms)};
+                    {"dur", std::to_string(dur_ms)},
                     {"cname", "good"}
-                }
+                };
                 profiling_results_.push_back(gpt_decoder_record);
 #endif
 
@@ -1129,16 +1129,16 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                 cudaEventSynchronize(step_end_event_);
                 cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
                 cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
-                std:unordered_map<std::string, std::string> dynamic_decode_layer_record{
-                    {"name", "dynamic_decode_layer_" + std::to_string(step) + std::to_string(ite)},
+                std::unordered_map<std::string, std::string> dynamic_decode_layer_record{
+                    {"name", "dynamic_decode_layer_" + std::to_string(step) + '_' + std::to_string(ite)},
                     {"ph", "X"},
                     {"pid", std::to_string(tensor_para_.rank_)},
                     {"tid", "4. dynamic_decode_layer"},
                     {"ts", std::to_string(ts_ms)},
-                    {"dur", std::to_string(dur_ms)};
+                    {"dur", std::to_string(dur_ms)},
                     {"cname", "bad"}
-                }
-                profiling_results_.append(gpt_decoder_record);
+                };
+                profiling_results_.push_back(dynamic_decode_layer_record);
 #endif
 
                 *generation_should_stop_ &= subbatch_should_stop;
@@ -1213,24 +1213,28 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             outFile << "{";
 
             auto item = profiling_results_[i].begin();
-            if (item.first == "ts" || item.first == "dur"){
-                outFile << '\"' << item.first << '\"' <<":" << item.second;
+            if (item->first == "ts" || item->first == "dur"){
+                outFile << '\"' << item->first << '\"' <<":" << item->second;
             }
             else{
-                outFile << '\"' << item.first << '\"' <<":" << '\"' << item.second << '\"';
+                outFile << '\"' << item->first << '\"' <<":" << '\"' << item->second << '\"';
             }
             
             item++;
             
             for (; item != profiling_results_[i].end(); item++){
-                if (item.first == "ts" || item.first == "dur"){
-                    outFile << ',' << '\"' << item.first << '\"' <<":" << item.second;
+                if (item->first == "ts" || item->first == "dur"){
+                    outFile << ',' << '\"' << item->first << '\"' <<":" << item->second;
                 }
                 else{
-                    outFile << ',' << '\"' << item.first << '\"' <<":" << '\"' << item.second << '\"';
+                    outFile << ',' << '\"' << item->first << '\"' <<":" << '\"' << item->second << '\"';
                 }
             }
-            outFile << "}" << std::endl;
+            outFile << "}";
+            if(i != profiling_results_.size()-1){
+                outFile << ',';
+            }
+            outFile << std::endl;
         }
         outFile << "]" << std::endl;
     }

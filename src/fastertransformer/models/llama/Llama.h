@@ -155,7 +155,7 @@ protected:
 
     // void insertStepProfilingResultsFromLlamaDecoder(int step, std::);
 
-    std::vector<std:unordered_map<std::string, std::string> > profiling_results_;
+    std::vector<std::unordered_map<std::string, std::string> > profiling_results_;
 #endif
 
 public:
