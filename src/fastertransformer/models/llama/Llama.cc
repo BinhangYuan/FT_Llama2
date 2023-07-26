@@ -759,7 +759,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
         cudaEventRecord(step_start_event_, stream_);
         cudaEventSynchronize(step_start_event_);
         cudaEventElapsedTime(&dur_ms, init_event_, step_start_event_);
-        std:unordered_map<std::string, std::string> init_record{
+        std::unordered_map<std::string, std::string> init_record{
             {"name", "prepare"}, 
             {"ph", "X"},
             {"pid", std::to_string(tensor_para_.rank_)},
@@ -768,7 +768,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             {"dur", std::to_string(dur_ms)};
             {"cname", "startup"}
         }
-        profiling_results_.append(init_record);
+        profiling_results_.push_back(init_record);
 #endif
 
         gpt_context_decoder_->forward(
@@ -780,7 +780,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
         cudaEventSynchronize(step_end_event_);
         cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
         cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
-        std:unordered_map<std::string, std::string> gpt_context_decoder_record{
+        std::unordered_map<std::string, std::string> gpt_context_decoder_record{
             {"name", "gpt_context_decoder"},
             {"ph", "X"},
             {"pid", std::to_string(tensor_para_.rank_)},
@@ -789,7 +789,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             {"dur", std::to_string(dur_ms)};
             {"cname", "thread_state_iowait"}
         }
-        profiling_results_.append(gpt_context_decoder_record);
+        profiling_results_.push_back(gpt_context_decoder_record);
 #endif
 
         
@@ -963,7 +963,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                 cudaEventSynchronize(step_end_event_);
                 cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
                 cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
-                std:unordered_map<std::string, std::string> gpt_decoder_record{
+                std::unordered_map<std::string, std::string> gpt_decoder_record{
                     {"name", "gpt_decoder_" + std::to_string(step) + std::to_string(ite)},
                     {"ph", "X"},
                     {"pid", std::to_string(tensor_para_.rank_)},
@@ -972,7 +972,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     {"dur", std::to_string(dur_ms)};
                     {"cname", "good"}
                 }
-                profiling_results_.append(gpt_decoder_record);
+                profiling_results_.push_back(gpt_decoder_record);
 #endif
 
             }
