@@ -26,6 +26,8 @@
 #include "src/fastertransformer/utils/custom_ar_comm.h"
 #include "src/fastertransformer/utils/prompt_learning.h"
 
+#define LLAMA_PROFILING
+
 namespace fastertransformer {
 
 template<typename T>
@@ -144,6 +146,17 @@ protected:
                           const size_t                                   max_seq_len);
     void sendTensorsToFirstPipelineNode(std::unordered_map<std::string, Tensor>*       output_tensors,
                                         const std::unordered_map<std::string, Tensor>* input_tensors);
+
+
+#ifdef LLAMA_PROFILING
+    cudaEvent_t init_event_;
+    cudaEvent_t step_start_event_;
+    cudaEvent_t step_end_event_;
+
+    // void insertStepProfilingResultsFromLlamaDecoder(int step, std::);
+
+    std::vector<std:unordered_map<std::string, std::string> > profiling_results_;
+#endif
 
 public:
     Llama(size_t                              head_num,

@@ -87,6 +87,13 @@ void Llama<T>::initialize()
                 token_generated_cb_step_);
         }
     }
+
+#ifdef LLAMA_PROFILING
+    cudaEventCreate(&init_event_);
+    cudaEventCreate(&step_start_event_);
+    cudaEventCreate(&step_end_event_);
+#endif
+
 }
 
 template<typename T>
@@ -462,6 +469,12 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
     // When there is no input_ids, put the start token at step 0 of output_ids_buf_. After forward, only copy
     // the step 1 ~ max_output_seq_len of output_ids_buf_ to output_tensors->at(0).data
 
+#ifdef LLAMA_PROFILING
+    float ts_ms;
+    float dur_ms;
+    cudaEventRecord(init_event_, stream_);
+#endif
+
     FT_CHECK_WITH_INFO(input_tensors->size() >= 3, "input_tensors->size() >= 3");
     FT_CHECK_WITH_INFO(output_tensors->size() >= 2, "output_tensors->size() >= 2");
     FT_CHECK(input_tensors->at("input_ids").shape.size() == 2);
@@ -742,8 +755,44 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             {"last_token_hidden_units",
              Tensor{MEMORY_GPU, data_type, {batch_size * beam_width, hidden_units_}, decoder_output_buf_}}};
 
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(step_start_event_, stream_);
+        cudaEventSynchronize(step_start_event_);
+        cudaEventElapsedTime(&dur_ms, init_event_, step_start_event_);
+        std:unordered_map<std::string, std::string> init_record{
+            {"name", "prepare"}, 
+            {"ph", "X"},
+            {"pid", std::to_string(tensor_para_.rank_)},
+            {"tid", "1. prepare"},
+            {"ts", "0"},
+            {"dur", std::to_string(dur_ms)};
+            {"cname", "startup"}
+        }
+        profiling_results_.append(init_record);
+#endif
+
         gpt_context_decoder_->forward(
             &decoder_output_tensors, &decoder_input_tensors, &gpt_weights->decoder_layer_weights);
+
+
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(step_end_event_, stream_);
+        cudaEventSynchronize(step_end_event_);
+        cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
+        cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
+        std:unordered_map<std::string, std::string> gpt_context_decoder_record{
+            {"name", "gpt_context_decoder"},
+            {"ph", "X"},
+            {"pid", std::to_string(tensor_para_.rank_)},
+            {"tid", "2. gpt_context_decoder"},
+            {"ts", std::to_string(ts_ms)},
+            {"dur", std::to_string(dur_ms)};
+            {"cname", "thread_state_iowait"}
+        }
+        profiling_results_.append(gpt_context_decoder_record);
+#endif
+
+        
         sync_check_cuda_error();
         invokeDecodingInitialize(finished_buf_,
                                  sequence_lengths_,
@@ -902,9 +951,33 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                             decoder_output_buf_ + hidden_units_offset}},
                     {"key_cache", Tensor{MEMORY_GPU, data_type, self_k_cache_shape, key_cache_}},
                     {"value_cache", Tensor{MEMORY_GPU, data_type, self_v_cache_shape, value_cache_}}};
+
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(step_start_event_, stream_);
+#endif 
                 gpt_decoder_->forward(
                     &decoder_output_tensors, &decoder_input_tensors, &gpt_weights->decoder_layer_weights);
+
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(step_end_event_, stream_);
+                cudaEventSynchronize(step_end_event_);
+                cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
+                cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
+                std:unordered_map<std::string, std::string> gpt_decoder_record{
+                    {"name", "gpt_decoder_" + std::to_string(step) + std::to_string(ite)},
+                    {"ph", "X"},
+                    {"pid", std::to_string(tensor_para_.rank_)},
+                    {"tid", "3. gpt_decoder"},
+                    {"ts", std::to_string(ts_ms)},
+                    {"dur", std::to_string(dur_ms)};
+                    {"cname", "good"}
+                }
+                profiling_results_.append(gpt_decoder_record);
+#endif
+
             }
+
+
 
             if (pipeline_para_.rank_ == pipeline_para_.world_size_ - 1) {
                 invokeGeneralT5LayerNorm(normed_decoder_output_buf_ + hidden_units_offset,
@@ -980,8 +1053,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                                           local_vocab_size,
                                           stream_);
                 }
-                
-                
+                            
                 int                                     tmp_local_batch_size       = local_batch_size;
                 bool                                    is_initialize_random_table = step == max_input_length;
                 std::unordered_map<std::string, Tensor> dynamic_decode_input_tensors{
@@ -1047,8 +1119,28 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     }
                     dynamic_decode_output_tensors.insert(*t);
                 }
-
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(step_start_event_, stream_);
+#endif
                 dynamic_decode_layer_->forward(&dynamic_decode_output_tensors, &dynamic_decode_input_tensors);
+
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(step_end_event_, stream_);
+                cudaEventSynchronize(step_end_event_);
+                cudaEventElapsedTime(&ts_ms, init_event_, step_start_event_);
+                cudaEventElapsedTime(&dur_ms, step_start_event_, step_end_event_);
+                std:unordered_map<std::string, std::string> dynamic_decode_layer_record{
+                    {"name", "dynamic_decode_layer_" + std::to_string(step) + std::to_string(ite)},
+                    {"ph", "X"},
+                    {"pid", std::to_string(tensor_para_.rank_)},
+                    {"tid", "4. dynamic_decode_layer"},
+                    {"ts", std::to_string(ts_ms)},
+                    {"dur", std::to_string(dur_ms)};
+                    {"cname", "bad"}
+                }
+                profiling_results_.append(gpt_decoder_record);
+#endif
+
                 *generation_should_stop_ &= subbatch_should_stop;
             }
         }
@@ -1108,6 +1200,42 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
 
     setOutputTensors(output_tensors, input_tensors, max_input_length, max_output_seq_len);
     sendTensorsToFirstPipelineNode(output_tensors, input_tensors);
+
+#ifdef LLAMA_PROFILING
+    std::string fName   = "/workspace/FasterTransformer/build/llama_profile_" + std::to_string(tensor_para_.rank_) + ".json";
+    auto  outFile = std::ofstream(fName, std::ios::out);
+    if (!outFile.is_open()) {
+        printf("[WARNING] Cannot write profiling results into file %s \n", fName.c_str());
+    }
+    else {
+        outFile << "[" << std::endl;
+        for (size_t i = 0; i < profiling_results_.size(); i++) {
+            outFile << "{";
+
+            auto item = profiling_results_[i].begin();
+            if (item.first == "ts" || item.first == "dur"){
+                outFile << '\"' << item.first << '\"' <<":" << item.second;
+            }
+            else{
+                outFile << '\"' << item.first << '\"' <<":" << '\"' << item.second << '\"';
+            }
+            
+            item++;
+            
+            for (; item != profiling_results_[i].end(); item++){
+                if (item.first == "ts" || item.first == "dur"){
+                    outFile << ',' << '\"' << item.first << '\"' <<":" << item.second;
+                }
+                else{
+                    outFile << ',' << '\"' << item.first << '\"' <<":" << '\"' << item.second << '\"';
+                }
+            }
+            outFile << "}" << std::endl;
+        }
+        outFile << "]" << std::endl;
+    }
+#endif
+
 }
 
 template<typename T>
