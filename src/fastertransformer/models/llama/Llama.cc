@@ -979,7 +979,6 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comp_slot_record(init_event_, l));
                     profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comm_slot_record(init_event_, l));
                 }
-
 #endif
 
             }
