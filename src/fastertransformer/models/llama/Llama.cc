@@ -967,12 +967,19 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     {"name", "gpt_decoder_" + std::to_string(step) + '_' + std::to_string(ite)},
                     {"ph", "X"},
                     {"pid", std::to_string(tensor_para_.rank_)},
-                    {"tid", "3. gpt_decoder"},
+                    {"tid", "4. gpt_decoder"},
                     {"ts", std::to_string(ts_ms)},
                     {"dur", std::to_string(dur_ms)},
                     {"cname", "good"}
                 };
                 profiling_results_.push_back(gpt_decoder_record);
+                for(int l = 0; l < num_layer_; l++){
+                    profiling_results_.push_back(gpt_decoder_->get_layer_prepare_slot_record(init_event_, l));
+                    profiling_results_.push_back(gpt_decoder_->get_layer_attention_slot_record(init_event_, l));
+                    profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comp_slot_record(init_event_, l));
+                    profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comm_slot_record(init_event_, l));
+                }
+
 #endif
 
             }
@@ -1133,7 +1140,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     {"name", "dynamic_decode_layer_" + std::to_string(step) + '_' + std::to_string(ite)},
                     {"ph", "X"},
                     {"pid", std::to_string(tensor_para_.rank_)},
-                    {"tid", "4. dynamic_decode_layer"},
+                    {"tid", "3. dynamic_decode_layer"},
                     {"ts", std::to_string(ts_ms)},
                     {"dur", std::to_string(dur_ms)},
                     {"cname", "bad"}
@@ -1237,6 +1244,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
             outFile << std::endl;
         }
         outFile << "]" << std::endl;
+        outFile.close();
     }
 #endif
 

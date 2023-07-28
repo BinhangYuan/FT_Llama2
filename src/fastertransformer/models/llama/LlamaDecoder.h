@@ -30,6 +30,8 @@
 #include "src/fastertransformer/utils/custom_ar_comm.h"
 #include "src/fastertransformer/utils/nccl_utils.h"
 
+#define LLAMA_PROFILING
+
 namespace fastertransformer {
 
 template<typename T>
@@ -72,6 +74,17 @@ protected:
 
     int int8_mode_ = 0;
 
+#ifdef LLAMA_PROFILING
+    std::vector<cudaEvent_t> layer_start_events_;
+    std::vector<cudaEvent_t> layer_attention_start_events_;
+    std::vector<cudaEvent_t> layer_attention_end_events_;
+    std::vector<cudaEvent_t> layer_ffn_comp_start_events_;
+    std::vector<cudaEvent_t> layer_ffn_comp_end_events_;
+    std::vector<cudaEvent_t> layer_ffn_comm_start_events_;
+    std::vector<cudaEvent_t> layer_ffn_comm_end_events_;
+#endif
+
+
 public:
     LlamaDecoder(size_t                              head_num,
                  size_t                              size_per_head,
@@ -102,6 +115,14 @@ public:
     virtual void forward(std::vector<Tensor>*                              output_tensors,
                          const std::vector<Tensor>*                        input_tensors,
                          const std::vector<LlamaDecoderLayerWeight<T>*>* decoder_layer_weights);
+
+
+#ifdef LLAMA_PROFILING
+    std::unordered_map<std::string, std::string> get_layer_prepare_slot_record(cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_attention_slot_record(cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_fnn_comp_slot_record(cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_fnn_comm_slot_record(cudaEvent_t& init_event, int layer_index);
+#endif
 };
 
 }  // namespace fastertransformer

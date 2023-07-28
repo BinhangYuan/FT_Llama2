@@ -57,6 +57,40 @@ void LlamaDecoder<T>::initialize()
                                                    custom_all_reduce_comm_,
                                                    enable_custom_all_reduce_,
                                                    int8_mode_); 
+
+#ifdef LLAMA_PROFILING
+    for (int i; i < num_layer_; i++){
+        cudaEvent_t layer_start_event_;
+        cudaEventCreate(&layer_start_event_);
+        layer_start_events_.push_back(layer_start_event_);
+
+        cudaEvent_t layer_attention_start_event_;
+        cudaEventCreate(&layer_attention_start_event_);
+        layer_attention_start_events_.push_back(layer_attention_start_event_);
+
+        cudaEvent_t layer_attention_end_event_;
+        cudaEventCreate(&layer_attention_end_event_);
+        layer_attention_end_events_.push_back(layer_attention_end_event_);
+
+        cudaEvent_t layer_ffn_comp_start_event_;
+        cudaEventCreate(&layer_ffn_comp_start_event_);
+        layer_ffn_comp_start_events_.push_back(layer_ffn_comp_start_event_);
+
+        cudaEvent_t layer_ffn_comp_end_event_;
+        cudaEventCreate(&layer_ffn_comp_end_event_);
+        layer_ffn_comp_end_events_.push_back(layer_ffn_comp_end_event_);
+
+        cudaEvent_t layer_ffn_comm_start_event_;
+        cudaEventCreate(&layer_ffn_comm_start_event_);
+        layer_ffn_comm_start_events_.push_back(layer_ffn_comm_start_event_);
+
+
+        cudaEvent_t layer_ffn_comm_end_event_;
+        cudaEventCreate(&layer_ffn_comm_end_event_);
+        layer_ffn_comm_end_events_.push_back(layer_ffn_comm_end_event_);
+    }
+#endif
+
 }
 
 template<typename T>
@@ -244,6 +278,11 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
     }
 
     for (uint l = 0; l < num_layer_; l++) {
+
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(layer_start_events_[l], stream_);
+#endif
+
         if (isValidLayerParallelId(l) == false) {
             continue;
         }
@@ -295,9 +334,17 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
             {"key_cache", Tensor{MEMORY_GPU, data_type, self_k_cache_size, k_cache.getPtrWithOffset(cache_offset)}},
             {"value_cache", Tensor{MEMORY_GPU, data_type, self_v_cache_size, v_cache.getPtrWithOffset(cache_offset)}}};
 
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(layer_attention_start_events_[l], stream_);
+#endif
+
         self_attention_layer_->forward(&self_attention_output_tensors,
                                        &self_attention_input_tensors,
                                        &gpt_decoder_layer_weight->at(l)->self_attention_weights);
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(layer_attention_end_events_[l], stream_);
+#endif
+        
         if (use_gptj_residual_) {
             invokeGeneralLayerNorm(decoder_normed_input_,
                                    layer_input,
@@ -329,7 +376,15 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
                                               data_type,
                                               {local_batch_size, hidden_units_},
                                               use_gptj_residual_ ? ffn_output_ : layer_output}}});
+        
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(layer_ffn_comp_start_events_[l], stream_);
+#endif
         ffn_layer_->forward(&ffn_output_tensors, &ffn_input_tensors, &gpt_decoder_layer_weight->at(l)->ffn_weights);
+
+#ifdef LLAMA_PROFILING
+        cudaEventRecord(layer_ffn_comp_end_events_[l], stream_);
+#endif
 
         if (use_gptj_residual_) {
             // Original workflow:
@@ -347,7 +402,13 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
                                               tensor_para_.world_size_,
                                               stream_);
             if (tensor_para_.world_size_ > 1) {
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(layer_ffn_comm_start_events_[l], stream_);
+#endif
                 ftNcclAllReduceSum(layer_output, layer_output, local_batch_size * hidden_units_, tensor_para_, stream_);
+#ifdef LLAMA_PROFILING
+                cudaEventRecord(layer_ffn_comm_end_events_[l], stream_);
+#endif
             }
         }
         else {
@@ -379,6 +440,88 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
         freeBuffer();
     }
 }
+
+
+#ifdef LLAMA_PROFILING
+template<typename T>
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_prepare_slot_record(cudaEvent_t& init_event, int layer_index){
+    float ts_ms;
+    float dur_ms;
+    cudaEventElapsedTime(&ts_ms, init_event, layer_start_events_[layer_index]);
+    cudaEventElapsedTime(&dur_ms, layer_start_events_[layer_index], layer_attention_start_events_[layer_index]);
+    std::unordered_map<std::string, std::string> record{
+        {"name", "layer_" + std::to_string(layer_index) + "_prepare"},
+        {"ph", "X"},
+        {"pid", std::to_string(tensor_para_.rank_)},
+        {"tid", "4. gpt_decoder_decompose"},
+        {"ts", std::to_string(ts_ms)},
+        {"dur", std::to_string(dur_ms)},
+        {"cname", "startup"}
+    };
+    return record;
+}
+
+
+template<typename T>
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_attention_slot_record(cudaEvent_t& init_event, int layer_index){
+    float ts_ms;
+    float dur_ms;
+    cudaEventElapsedTime(&ts_ms, init_event, layer_attention_start_events_[layer_index]);
+    cudaEventElapsedTime(&dur_ms, layer_attention_start_events_[layer_index], layer_attention_end_events_[layer_index]);
+    std::unordered_map<std::string, std::string> record{
+        {"name", "layer_" + std::to_string(layer_index) + "_attention"},
+        {"ph", "X"},
+        {"pid", std::to_string(tensor_para_.rank_)},
+        {"tid", "4. gpt_decoder_decompose"},
+        {"ts", std::to_string(ts_ms)},
+        {"dur", std::to_string(dur_ms)},
+        {"cname", "bad"}
+    };
+    return record;
+}
+
+template<typename T>
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comp_slot_record(cudaEvent_t& init_event, int layer_index){
+    float ts_ms;
+    float dur_ms;
+    cudaEventElapsedTime(&ts_ms, init_event, layer_ffn_comp_start_events_[layer_index]);
+    cudaEventElapsedTime(&dur_ms, layer_ffn_comp_start_events_[layer_index], layer_ffn_comp_end_events_[layer_index]);
+    std::unordered_map<std::string, std::string> record{
+        {"name", "layer_" + std::to_string(layer_index) + "_ffn_comp"},
+        {"ph", "X"},
+        {"pid", std::to_string(tensor_para_.rank_)},
+        {"tid", "4. gpt_decoder_decompose"},
+        {"ts", std::to_string(ts_ms)},
+        {"dur", std::to_string(dur_ms)},
+        {"cname", "good"}
+    };
+    return record;
+}
+
+
+template<typename T>
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comm_slot_record(cudaEvent_t& init_event, int layer_index){
+
+    float ts_ms;
+    float dur_ms;
+    cudaEventElapsedTime(&ts_ms, init_event, layer_ffn_comm_start_events_[layer_index]);
+    cudaEventElapsedTime(&dur_ms, layer_ffn_comm_start_events_[layer_index], layer_ffn_comm_end_events_[layer_index]);
+    std::unordered_map<std::string, std::string> record{
+        {"name", "layer_" + std::to_string(layer_index) + "_ffn_comm"},
+        {"ph", "X"},
+        {"pid", std::to_string(tensor_para_.rank_)},
+        {"tid", "4. gpt_decoder_decompose"},
+        {"ts", std::to_string(ts_ms)},
+        {"dur", std::to_string(dur_ms)},
+        {"cname", "thread_state_iowait"}
+    };
+    return record;
+}
+
+#endif
+
+
+
 
 template class LlamaDecoder<float>;
 template class LlamaDecoder<half>;
