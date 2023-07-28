@@ -84,7 +84,6 @@ void LlamaDecoder<T>::initialize()
         cudaEventCreate(&layer_ffn_comm_start_event_);
         layer_ffn_comm_start_events_.push_back(layer_ffn_comm_start_event_);
 
-
         cudaEvent_t layer_ffn_comm_end_event_;
         cudaEventCreate(&layer_ffn_comm_end_event_);
         layer_ffn_comm_end_events_.push_back(layer_ffn_comm_end_event_);
@@ -444,7 +443,7 @@ void LlamaDecoder<T>::forward(std::unordered_map<std::string, Tensor>*          
 
 #ifdef LLAMA_PROFILING
 template<typename T>
-std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_prepare_slot_record(cudaEvent_t& init_event, int layer_index){
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_prepare_slot_record(const cudaEvent_t& init_event, int layer_index){
     float ts_ms;
     float dur_ms;
     cudaEventElapsedTime(&ts_ms, init_event, layer_start_events_[layer_index]);
@@ -453,7 +452,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_prepare_
         {"name", "layer_" + std::to_string(layer_index) + "_prepare"},
         {"ph", "X"},
         {"pid", std::to_string(tensor_para_.rank_)},
-        {"tid", "4. gpt_decoder_decompose"},
+        {"tid", "4-1. gpt_decoder_decompose_prepare"},
         {"ts", std::to_string(ts_ms)},
         {"dur", std::to_string(dur_ms)},
         {"cname", "startup"}
@@ -463,7 +462,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_prepare_
 
 
 template<typename T>
-std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_attention_slot_record(cudaEvent_t& init_event, int layer_index){
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_attention_slot_record(const cudaEvent_t& init_event, int layer_index){
     float ts_ms;
     float dur_ms;
     cudaEventElapsedTime(&ts_ms, init_event, layer_attention_start_events_[layer_index]);
@@ -472,7 +471,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_attentio
         {"name", "layer_" + std::to_string(layer_index) + "_attention"},
         {"ph", "X"},
         {"pid", std::to_string(tensor_para_.rank_)},
-        {"tid", "4. gpt_decoder_decompose"},
+        {"tid", "4-2. gpt_decoder_decompose_attention"},
         {"ts", std::to_string(ts_ms)},
         {"dur", std::to_string(dur_ms)},
         {"cname", "bad"}
@@ -481,7 +480,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_attentio
 }
 
 template<typename T>
-std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comp_slot_record(cudaEvent_t& init_event, int layer_index){
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comp_slot_record(const cudaEvent_t& init_event, int layer_index){
     float ts_ms;
     float dur_ms;
     cudaEventElapsedTime(&ts_ms, init_event, layer_ffn_comp_start_events_[layer_index]);
@@ -490,7 +489,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comp
         {"name", "layer_" + std::to_string(layer_index) + "_ffn_comp"},
         {"ph", "X"},
         {"pid", std::to_string(tensor_para_.rank_)},
-        {"tid", "4. gpt_decoder_decompose"},
+        {"tid", "4-3. gpt_decoder_decompose_ffn_comp"},
         {"ts", std::to_string(ts_ms)},
         {"dur", std::to_string(dur_ms)},
         {"cname", "good"}
@@ -500,8 +499,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comp
 
 
 template<typename T>
-std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comm_slot_record(cudaEvent_t& init_event, int layer_index){
-
+std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comm_slot_record(const cudaEvent_t& init_event, int layer_index){
     float ts_ms;
     float dur_ms;
     cudaEventElapsedTime(&ts_ms, init_event, layer_ffn_comm_start_events_[layer_index]);
@@ -510,7 +508,7 @@ std::unordered_map<std::string, std::string> LlamaDecoder<T>::get_layer_fnn_comm
         {"name", "layer_" + std::to_string(layer_index) + "_ffn_comm"},
         {"ph", "X"},
         {"pid", std::to_string(tensor_para_.rank_)},
-        {"tid", "4. gpt_decoder_decompose"},
+        {"tid", "4-4. gpt_decoder_decompose_ffn_comm"},
         {"ts", std::to_string(ts_ms)},
         {"dur", std::to_string(dur_ms)},
         {"cname", "thread_state_iowait"}

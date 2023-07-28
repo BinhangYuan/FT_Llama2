@@ -118,10 +118,10 @@ public:
 
 
 #ifdef LLAMA_PROFILING
-    std::unordered_map<std::string, std::string> get_layer_prepare_slot_record(cudaEvent_t& init_event, int layer_index);
-    std::unordered_map<std::string, std::string> get_layer_attention_slot_record(cudaEvent_t& init_event, int layer_index);
-    std::unordered_map<std::string, std::string> get_layer_fnn_comp_slot_record(cudaEvent_t& init_event, int layer_index);
-    std::unordered_map<std::string, std::string> get_layer_fnn_comm_slot_record(cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_prepare_slot_record(const cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_attention_slot_record(const cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_fnn_comp_slot_record(const cudaEvent_t& init_event, int layer_index);
+    std::unordered_map<std::string, std::string> get_layer_fnn_comm_slot_record(const cudaEvent_t& init_event, int layer_index);
 #endif
 };
 

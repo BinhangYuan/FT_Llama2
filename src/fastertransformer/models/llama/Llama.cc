@@ -470,6 +470,7 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
     // the step 1 ~ max_output_seq_len of output_ids_buf_ to output_tensors->at(0).data
 
 #ifdef LLAMA_PROFILING
+    profiling_results_.clear();
     float ts_ms;
     float dur_ms;
     cudaEventRecord(init_event_, stream_);
@@ -977,7 +978,8 @@ void Llama<T>::forward(std::unordered_map<std::string, Tensor>*       output_ten
                     profiling_results_.push_back(gpt_decoder_->get_layer_prepare_slot_record(init_event_, l));
                     profiling_results_.push_back(gpt_decoder_->get_layer_attention_slot_record(init_event_, l));
                     profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comp_slot_record(init_event_, l));
-                    profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comm_slot_record(init_event_, l));
+                    //TODO:: fix this? Why this does not work?
+                    //profiling_results_.push_back(gpt_decoder_->get_layer_fnn_comm_slot_record(init_event_, l));
                 }
 #endif
 
